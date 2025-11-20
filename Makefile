@@ -1,6 +1,6 @@
 # Makefile for building a Linux kernel module
 
-obj-m += chr_driver.o
+obj-m += char_driver.o
 
 KDIR := /lib/modules/$(shell uname -r)/build
 PWD  := $(shell pwd)

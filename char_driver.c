@@ -12,15 +12,19 @@
 
 #define MEM_SIZE 1024
 
-dev_t dev = 0;
-static struct class *dev_class;
-static struct cdev chr_cdev;
-uint8_t *kernel_buffer;
-
 struct mydev {
      struct cdev cdev; 
      int data;
+     uint8_t *kernel_buffer;
  };
+
+
+static struct class *dev_class;
+static struct mydev my_device;
+dev_t devNumber = 0;
+
+
+
 
 /* Function prototypes */
 static int chr_open(struct inode *inode, struct file *file);
@@ -42,7 +46,7 @@ static struct file_operations fops = {
 /* Open function */
 static int chr_open(struct inode *inode, struct file *file)
 {
-    struct mydev *dev;
+   struct mydev *dev;
    // Convert inode->i_cdev back to our mydev struct
     dev = container_of(inode->i_cdev, struct mydev, cdev);
 
@@ -63,8 +67,11 @@ static int chr_release(struct inode *inode, struct file *file)
 /* Read function */
 static ssize_t chr_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 {
+    struct mydev *dev;
+
+    dev = filp->private_data;
     /* Copy data from kernel space to user space */
-    if (copy_to_user(buf, kernel_buffer, min(len, (size_t)MEM_SIZE))==0) {
+    if (copy_to_user(buf, dev->kernel_buffer, min(len, (size_t)MEM_SIZE))==0) {
         /* return number of bytes copied (here: min(len, MEM_SIZE)) */
         return min(len, (size_t)MEM_SIZE);
        
@@ -78,8 +85,12 @@ static ssize_t chr_read(struct file *filp, char __user *buf, size_t len, loff_t 
 /* Write function */
 static ssize_t chr_write(struct file *filp, const char __user *buf, size_t len, loff_t *off)
 {
+    struct mydev *dev;
+
+    dev = filp->private_data;
+
     /* Copy data from user space to kernel space */
-    if (copy_from_user(kernel_buffer, buf, min(len, (size_t)MEM_SIZE)) == 0) {
+    if (copy_from_user(dev->kernel_buffer, buf, min(len, (size_t)MEM_SIZE)) == 0) {
         printk(KERN_INFO "Write Function\n");
         return min(len, (size_t)MEM_SIZE);
         
@@ -93,29 +104,48 @@ static ssize_t chr_write(struct file *filp, const char __user *buf, size_t len, 
 /* Initialization function */
 static int __init chr_driver_init(void)
 {
+    int charMajor;
+    int charMinor;
+    struct mydev *my_dev;
+
+    my_dev = &my_device;
+
+    my_dev->kernel_buffer = kmalloc(MEM_SIZE, GFP_KERNEL);
+    if (!my_dev->kernel_buffer) 
+    {
+        printk(KERN_ERR "Cannot allocate kernel buffer\n");
+        return -ENOMEM;
+       
+    }
+
     /* Allocating Major number */
-    if ((alloc_chrdev_region(&dev, 0, 1, "chr_Dev")) < 0) {
+    if ((alloc_chrdev_region(&devNumber, 0, 1, "chr_Dev")) < 0) {
         printk(KERN_INFO "Cannot allocate major number\n");
         return -1;
     }
 
+    charMajor = MAJOR(devNumber);
+    charMinor = MINOR(devNumber);
+    printk(KERN_INFO  "Major is %d\n", charMajor);
+    printk(KERN_INFO  "Minor is %d\n", charMinor);
+
     /* Initialize cdev structure */
-    cdev_init(&chr_cdev, &fops);
+    cdev_init(&my_dev->cdev, &fops);
 
     /* Adding character device to the system */
-    if ((cdev_add(&chr_cdev, dev, 1)) < 0) {
+    if ((cdev_add(&my_dev->cdev, devNumber, 1)) < 0) {
         printk(KERN_INFO "Cannot add the device to the system\n");
         goto r_class;
     }
 
     /* Creating struct class */
-    if ((dev_class = class_create(THIS_MODULE, "chr_class")) == NULL) {
+    if ((dev_class = class_create("chr_class")) == NULL) {
         printk(KERN_INFO "Cannot create the struct class\n");
         goto r_class;
     }
 
     /* Creating device */
-    if ((device_create(dev_class, NULL, dev, NULL, "chr_device")) == NULL) {
+    if ((device_create(dev_class, NULL, devNumber, NULL, "chr_device")) == NULL) {
         printk(KERN_INFO "Cannot create the Device\n");
         goto r_device;
     }
@@ -126,18 +156,20 @@ static int __init chr_driver_init(void)
 r_device:
     class_destroy(dev_class);
 r_class:
-    unregister_chrdev_region(dev, 1);
-    cdev_del(&chr_cdev);
+    unregister_chrdev_region(devNumber, 1);
+    cdev_del(&my_dev->cdev);
     return -1;
 }
 
 /* Exit function */
 static void __exit chr_driver_exit(void)
 {
-    device_destroy(dev_class, dev);
+    if (my_device.kernel_buffer)
+        kfree(my_device.kernel_buffer);
+    device_destroy(dev_class, devNumber);
     class_destroy(dev_class);
-    cdev_del(&chr_cdev);
-    unregister_chrdev_region(dev, 1);
+    cdev_del(&my_device.cdev);
+    unregister_chrdev_region(devNumber, 1);
     printk(KERN_INFO "Device Driver Remove...Done!!!\n");
 }
 
