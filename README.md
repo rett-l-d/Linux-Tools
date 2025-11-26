@@ -17,5 +17,5 @@
 
 # Python Sockets Client 
 * This tool was developed to connect with an embedded controller through sockets while at the same time executing a robotic simulation with RoboDK.
-* It's a multi-thread tool that receives 60 robot buffering them while another thread executes the motions instructions, so there is not delay between receiving the data points and executing the motions.
+* It's a multi-thread tool that receives 60 targets, buffering them while another thread executes the motions instructions, so there is not delay between receiving the data points and executing the motions.
 * The targets are structured as 6D poses and before the end of the buffer, the task requests another 60 data points and so on until the controller ends the trasnmission.
